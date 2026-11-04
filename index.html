@@ -25,10 +25,12 @@
         <img src="https://i.postimg.cc/N5vrBxZ8/logo.png" alt="Logo" class="w-8 h-8 object-contain rounded-lg bg-slate-700 p-0.5">
         <h1 class="text-lg font-bold text-emerald-400">TUMMOW STOCK CHECK</h1>
       </div>
-      <div class="flex bg-slate-700 p-1 rounded-lg">
-        <button onclick="switchTab('audit')" id="btn-tab-audit" class="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white transition-all">ตรวจนับ</button>
-        <button onclick="switchTab('dashboard')" id="btn-tab-dashboard" class="px-3 py-1.5 rounded-md text-sm font-medium text-slate-300 transition-all">แดชบอร์ด</button>
-      </div>
+    </div>
+    <div class="max-w-xl mx-auto px-4 pb-3 grid grid-cols-4 gap-1">
+      <button onclick="switchTab('audit')" id="btn-tab-audit" class="px-1 py-2 rounded-md text-xs sm:text-sm font-medium bg-emerald-500 text-white">ตรวจนับ</button>
+      <button onclick="switchTab('reduce')" id="btn-tab-reduce" class="px-1 py-2 rounded-md text-xs sm:text-sm font-medium bg-slate-700 text-slate-300">ตัดสต๊อก</button>
+      <button onclick="switchTab('history')" id="btn-tab-history" class="px-1 py-2 rounded-md text-xs sm:text-sm font-medium bg-slate-700 text-slate-300">ประวัติ</button>
+      <button onclick="switchTab('dashboard')" id="btn-tab-dashboard" class="px-1 py-2 rounded-md text-xs sm:text-sm font-medium bg-slate-700 text-slate-300">แดชบอร์ด</button>
     </div>
   </nav>
 
@@ -109,11 +111,44 @@
       <p id="dashMsg" class="text-center text-sm text-slate-400"></p>
     </div>
 
+    <!-- ===== ตัดสต๊อก ===== -->
+    <div id="tab-reduce" class="space-y-4 hidden">
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-4">
+        <h2 class="text-lg font-semibold text-amber-300">📤 ตัดสต๊อก / ลดจำนวน</h2>
+        <div id="camSlot-reduce"></div>
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">รหัสสินค้า / บาร์โค้ด</label>
+          <input type="text" id="rCode" placeholder="สแกนหรือพิมพ์รหัส" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500">
+          <p id="rName" class="text-sm mt-1 min-h-[1.25rem]"></p>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">จำนวนที่ลด (ชิ้น)</label>
+          <input type="number" inputmode="numeric" id="rQty" min="1" placeholder="เช่น 3" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500">
+        </div>
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">หมายเหตุ</label>
+          <input type="text" id="rNote" placeholder="เช่น เบิกขาย, ของเสีย" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500">
+        </div>
+        <button type="button" onclick="doReduce()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-3.5 rounded-xl">ยืนยันลดจำนวน</button>
+      </div>
+      <div id="rResult" class="hidden p-4 rounded-xl text-center font-medium"></div>
+    </div>
+
+    <!-- ===== ประวัติ (แก้ไข/ลบ) ===== -->
+    <div id="tab-history" class="space-y-3 hidden">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-bold text-emerald-300">🕘 ประวัติการนับ</h2>
+        <button onclick="loadHistory()" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-xs">🔄 โหลดใหม่</button>
+      </div>
+      <div id="historyList" class="space-y-3"></div>
+      <p id="histMsg" class="text-center text-sm text-slate-400"></p>
+    </div>
+
   </main>
 
   <script>
     // ====== ตั้งค่า: ใส่ URL ของ Web App (ลงท้ายด้วย /exec) ======
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyVHFjzZ85gs7RCI3WWGNH5rduCQtsMzPSyhqKd2-HtcjRRIpY5Hswk8KsZ0RuzitF-/exec";
+    const SCRIPT_URL = "ใhttps://script.google.com/macros/s/AKfycbyYR_NQLJ_T5D-xJwpVREf6vagrzwII-BTyMHsDPWjeHgQetX8KOcTEkSGjVZ2twGoy/exec";
     // ===========================================================
 
     
@@ -193,11 +228,12 @@
       if (!scanning || text === lastCode) return;
       lastCode = text;
       beep();
-      document.getElementById('sku').value = text;
-      lookupName(text);
+      const tid = scanTarget === 'reduce' ? 'rCode' : 'sku';
+      document.getElementById(tid).value = text;
+      lookupName(text, tid);
       await stopScanner();
       // เหมือนเครื่องยิง: ได้รหัสแล้วเด้งไปช่องจำนวนทันที
-      const qty = document.getElementById('actualQty');
+      const qty = document.getElementById(scanTarget === 'reduce' ? 'rQty' : 'actualQty');
       qty.focus();
       qty.select();
       setTimeout(() => { lastCode = ""; }, 1500);
@@ -271,10 +307,22 @@
     }
 
 
+    let scanTarget = 'audit';
+    const camBoxEl = document.getElementById('camBox');
+    const camOrigin = camBoxEl.parentNode;
+    const camNext = camBoxEl.nextSibling;
+
+    function esc(t) {
+      return String(t === undefined || t === null ? "" : t).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
     // แสดงชื่อสินค้าที่ตรงกับรหัส/บาร์โค้ด เพื่อยืนยันว่าสแกนถูกตัว
-    let lookupTimer = null;
-    async function lookupName(code) {
-      const el = document.getElementById('skuName');
+    const lookupTimers = {};
+    async function lookupName(code, inputId) {
+      inputId = inputId || 'sku';
+      const el = document.getElementById(inputId === 'sku' ? 'skuName' : 'rName');
       code = (code || "").trim();
       if (!code) { el.innerText = ""; return; }
       el.className = "text-sm mt-1 text-slate-400";
@@ -282,7 +330,7 @@
       try {
         const res = await fetch(SCRIPT_URL + "?action=lookup&code=" + encodeURIComponent(code));
         const d = await res.json();
-        if (document.getElementById('sku').value.trim() !== code) return;
+        if (document.getElementById(inputId).value.trim() !== code) return;
         if (d.found) {
           el.className = "text-sm mt-1 text-emerald-400";
           el.innerText = "✅ " + d.name + " (" + d.sku + ")";
@@ -290,23 +338,112 @@
           el.className = "text-sm mt-1 text-amber-400";
           el.innerText = "⚠️ ไม่พบรหัสนี้ในชีต";
         }
-      } catch (err) {
-        el.innerText = "";
-      }
+      } catch (err) { el.innerText = ""; }
     }
-    document.getElementById('sku').addEventListener('input', function (e) {
-      clearTimeout(lookupTimer);
-      lookupTimer = setTimeout(function () { lookupName(e.target.value); }, 600);
+    ['sku', 'rCode'].forEach(function (id) {
+      document.getElementById(id).addEventListener('input', function (e) {
+        clearTimeout(lookupTimers[id]);
+        lookupTimers[id] = setTimeout(function () { lookupName(e.target.value, id); }, 600);
+      });
     });
 
+    const TABS = ['audit', 'reduce', 'history', 'dashboard'];
     function switchTab(tab) {
       stopScanner();
-      const a = tab === 'audit';
-      document.getElementById('tab-audit').classList.toggle('hidden', !a);
-      document.getElementById('tab-dashboard').classList.toggle('hidden', a);
-      document.getElementById('btn-tab-audit').className = "px-3 py-1.5 rounded-md text-sm font-medium transition-all " + (a ? "bg-emerald-500 text-white" : "text-slate-300");
-      document.getElementById('btn-tab-dashboard').className = "px-3 py-1.5 rounded-md text-sm font-medium transition-all " + (!a ? "bg-emerald-500 text-white" : "text-slate-300");
-      if (!a) loadDashboardData();
+      scanTarget = tab === 'reduce' ? 'reduce' : 'audit';
+      TABS.forEach(function (t) {
+        document.getElementById('tab-' + t).classList.toggle('hidden', t !== tab);
+        document.getElementById('btn-tab-' + t).className = "px-1 py-2 rounded-md text-xs sm:text-sm font-medium " + (t === tab ? "bg-emerald-500 text-white" : "bg-slate-700 text-slate-300");
+      });
+      if (tab === 'reduce') document.getElementById('camSlot-reduce').appendChild(camBoxEl);
+      else camOrigin.insertBefore(camBoxEl, camNext);
+      if (tab === 'dashboard') loadDashboardData();
+      if (tab === 'history') loadHistory();
+    }
+
+    // เรียกคำสั่งแก้ไข/ลบ/ตัดสต๊อก (อ่านผลลัพธ์ได้ เพราะใช้ GET)
+    let adminPin = "";
+    async function api(params, retried) {
+      const q = new URLSearchParams(params);
+      if (adminPin) q.set("pin", adminPin);
+      const res = await fetch(SCRIPT_URL + "?" + q.toString());
+      const d = await res.json();
+      if (d.needPin) {
+        adminPin = "";
+        if (!retried) {
+          const p = prompt("ใส่ PIN ผู้ดูแล");
+          if (p) { adminPin = p; return api(params, true); }
+        }
+      }
+      return d;
+    }
+
+    let histItems = [];
+    async function loadHistory() {
+      const msg = document.getElementById('histMsg');
+      msg.innerText = "กำลังโหลด...";
+      try {
+        const res = await fetch(SCRIPT_URL + "?action=history");
+        const d = await res.json();
+        histItems = d.items || [];
+        msg.innerText = histItems.length ? "" : "ยังไม่มีรายการนับ";
+        document.getElementById('historyList').innerHTML = histItems.map(function (it, i) {
+          const v = it.actualQty - it.systemQty;
+          const vc = v < 0 ? "text-red-400" : (v > 0 ? "text-amber-400" : "text-emerald-400");
+          return '<div class="bg-slate-800 border border-slate-700 rounded-xl p-4">' +
+            '<div class="flex justify-between text-xs text-slate-400"><span>' + esc(it.time) + '</span><span>' + esc(it.sku) + '</span></div>' +
+            '<p class="font-semibold mt-1">' + esc(it.name || it.sku) + '</p>' +
+            '<p class="text-sm text-slate-300 mt-1">ระบบ ' + it.systemQty + ' → นับ <b>' + it.actualQty + '</b> <span class="' + vc + '">(' + (v > 0 ? '+' : '') + v + ')</span></p>' +
+            (it.note && it.note !== "-" ? '<p class="text-xs text-slate-400 mt-1">📝 ' + esc(it.note) + '</p>' : '') +
+            '<div class="flex gap-2 mt-3">' +
+            '<button onclick="editLog(' + i + ')" class="flex-1 bg-slate-700 hover:bg-slate-600 py-2 rounded-lg text-sm">✏️ แก้ไข</button>' +
+            '<button onclick="deleteLog(' + i + ')" class="flex-1 bg-red-600/80 hover:bg-red-500 py-2 rounded-lg text-sm">🗑️ ลบ</button>' +
+            '</div></div>';
+        }).join("");
+      } catch (err) {
+        msg.innerText = "โหลดประวัติไม่ได้ ตรวจสอบ SCRIPT_URL และ Deploy เวอร์ชันใหม่";
+      }
+    }
+
+    async function editLog(i) {
+      const it = histItems[i];
+      const v = prompt("แก้ยอดนับของ " + (it.name || it.sku) + "\nยอดเดิม " + it.actualQty + " ชิ้น ใส่ยอดใหม่:", it.actualQty);
+      if (v === null || v.trim() === "") return;
+      const d = await api({ action: 'editLog', row: it.row, ts: it.ts, qty: v.trim() });
+      alert(d.ok ? "✅ แก้ไขแล้ว" : "❌ " + (d.error || "ไม่สำเร็จ"));
+      loadHistory();
+    }
+
+    async function deleteLog(i) {
+      const it = histItems[i];
+      if (!confirm("ลบรายการนับ " + (it.name || it.sku) + " (นับได้ " + it.actualQty + " ชิ้น) ?")) return;
+      const d = await api({ action: 'deleteLog', row: it.row, ts: it.ts });
+      alert(d.ok ? "🗑️ ลบแล้ว" : "❌ " + (d.error || "ไม่สำเร็จ"));
+      loadHistory();
+    }
+
+    async function doReduce() {
+      const code = document.getElementById('rCode').value.trim();
+      const qty = parseInt(document.getElementById('rQty').value);
+      const box = document.getElementById('rResult');
+      if (!code || !(qty > 0)) { alert("กรอกรหัสสินค้าและจำนวนที่ลดให้ถูกต้อง"); return; }
+      if (!confirm("ลดจำนวน " + qty + " ชิ้น ?")) return;
+      box.className = "hidden";
+      try {
+        const d = await api({ action: 'reduce', code: code, qty: qty, note: document.getElementById('rNote').value });
+        if (d.ok) {
+          box.className = "p-4 rounded-xl text-center font-medium bg-emerald-500/20 border border-emerald-500/50 text-emerald-300";
+          box.innerText = "✅ ตัดสต๊อก " + d.name + ": " + d.before + " → " + d.after + " ชิ้น";
+          ['rCode', 'rQty', 'rNote'].forEach(function (id) { document.getElementById(id).value = ""; });
+          document.getElementById('rName').innerText = "";
+        } else {
+          box.className = "p-4 rounded-xl text-center font-medium bg-red-500/20 border border-red-500/50 text-red-300";
+          box.innerText = "❌ " + (d.error || "ไม่สำเร็จ");
+        }
+      } catch (err) {
+        box.className = "p-4 rounded-xl text-center font-medium bg-red-500/20 border border-red-500/50 text-red-300";
+        box.innerText = "❌ ติดต่อเซิร์ฟเวอร์ไม่ได้";
+      }
     }
 
     let myChart = null;
