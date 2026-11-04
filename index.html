@@ -53,6 +53,7 @@
         <div>
           <label class="block text-sm text-slate-400 mb-1">รหัสสินค้า (SKU)</label>
           <input type="text" id="sku" required placeholder="สแกนอัตโนมัติ หรือพิมพ์เอง" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500">
+          <p id="skuName" class="text-sm mt-1 min-h-[1.25rem]"></p>
         </div>
 
         <div>
@@ -97,7 +98,13 @@
         <div class="bg-slate-800 border border-slate-700 p-4 rounded-xl"><p class="text-xs text-slate-400">สต๊อกเกิน ⚠️</p><p id="stat-surplus" class="text-2xl font-bold text-amber-400 mt-1">0</p></div>
       </div>
       <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl flex flex-col items-center">
+        <h3 class="text-sm font-semibold text-slate-300 mb-4 self-start">ความถูกต้องของสต๊อก</h3>
         <div class="w-full max-w-xs h-64"><canvas id="auditChart"></canvas></div>
+      </div>
+
+      <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl">
+        <h3 class="text-sm font-semibold text-slate-300 mb-4">จำนวนสินค้าตามหมวดหมู่ (ชิ้น)</h3>
+        <div class="w-full h-64"><canvas id="categoryChart"></canvas></div>
       </div>
       <p id="dashMsg" class="text-center text-sm text-slate-400"></p>
     </div>
@@ -106,7 +113,7 @@
 
   <script>
     // ====== ตั้งค่า: ใส่ URL ของ Web App (ลงท้ายด้วย /exec) ======
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyVGJpjBHHPeZ-cZ1im27W4_f5AoMkLWl2b2GRPB97AyDthXppZWOer25WR85FV-He/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyVHFjzZ85gs7RCI3WWGNH5rduCQtsMzPSyhqKd2-HtcjRRIpY5Hswk8KsZ0RuzitF-/exec";
     // ===========================================================
 
     
@@ -187,6 +194,7 @@
       lastCode = text;
       beep();
       document.getElementById('sku').value = text;
+      lookupName(text);
       await stopScanner();
       // เหมือนเครื่องยิง: ได้รหัสแล้วเด้งไปช่องจำนวนทันที
       const qty = document.getElementById('actualQty');
@@ -249,6 +257,7 @@
         resultBox.className = "p-4 rounded-xl text-center font-medium bg-emerald-500/20 border border-emerald-500/50 text-emerald-300";
         resultBox.innerText = "✅ ส่งข้อมูลแล้ว: " + data.sku;
         document.getElementById('auditForm').reset();
+        document.getElementById('skuName').innerText = "";
         document.getElementById('autoNext').checked = true;
 
         if (document.getElementById('autoNext').checked) startScanner();
@@ -260,6 +269,35 @@
         btn.innerText = "บันทึกและส่งแจ้งเตือน LINE";
       }
     }
+
+
+    // แสดงชื่อสินค้าที่ตรงกับรหัส/บาร์โค้ด เพื่อยืนยันว่าสแกนถูกตัว
+    let lookupTimer = null;
+    async function lookupName(code) {
+      const el = document.getElementById('skuName');
+      code = (code || "").trim();
+      if (!code) { el.innerText = ""; return; }
+      el.className = "text-sm mt-1 text-slate-400";
+      el.innerText = "กำลังค้นหา...";
+      try {
+        const res = await fetch(SCRIPT_URL + "?action=lookup&code=" + encodeURIComponent(code));
+        const d = await res.json();
+        if (document.getElementById('sku').value.trim() !== code) return;
+        if (d.found) {
+          el.className = "text-sm mt-1 text-emerald-400";
+          el.innerText = "✅ " + d.name + " (" + d.sku + ")";
+        } else {
+          el.className = "text-sm mt-1 text-amber-400";
+          el.innerText = "⚠️ ไม่พบรหัสนี้ในชีต";
+        }
+      } catch (err) {
+        el.innerText = "";
+      }
+    }
+    document.getElementById('sku').addEventListener('input', function (e) {
+      clearTimeout(lookupTimer);
+      lookupTimer = setTimeout(function () { lookupName(e.target.value); }, 600);
+    });
 
     function switchTab(tab) {
       stopScanner();
@@ -282,24 +320,56 @@
         document.getElementById('stat-audited').innerText = d.auditedCount;
         document.getElementById('stat-deficit').innerText = d.deficitCount;
         document.getElementById('stat-surplus').innerText = d.surplusCount;
-        renderChart(d.auditedCount, d.pendingCount, d.deficitCount, d.surplusCount);
+        const matched = Math.max(0, d.auditedCount - d.deficitCount - d.surplusCount);
+        renderChart(matched, d.pendingCount, d.deficitCount, d.surplusCount);
+        renderCategoryChart(d.categories || []);
         msg.innerText = "";
       } catch (err) {
         msg.innerText = "โหลดแดชบอร์ดไม่ได้ ตรวจสอบ SCRIPT_URL และ doGet ใน Code.gs";
       }
     }
 
-    function renderChart(audited, pending, deficit, surplus) {
+    function renderChart(matched, pending, deficit, surplus) {
       const ctx = document.getElementById('auditChart').getContext('2d');
       if (myChart) myChart.destroy();
       myChart = new Chart(ctx, {
         type: 'doughnut',
         data: {
-          labels: ['ตรวจแล้ว', 'ยังไม่ตรวจ', 'สต๊อกขาด', 'สต๊อกเกิน'],
-          datasets: [{ data: [audited, pending, deficit, surplus], backgroundColor: ['#10B981', '#475569', '#EF4444', '#F59E0B'], borderWidth: 0 }]
+          labels: ['ตรงตามระบบ', 'ขาดหาย', 'เกินมา', 'ยังไม่ตรวจ'],
+          datasets: [{ data: [matched, deficit, surplus, pending], backgroundColor: ['#10B981', '#EF4444', '#F59E0B', '#475569'], borderWidth: 0 }]
         },
-        options: { responsive: true, maintainAspectRatio: false,
+        options: { responsive: true, maintainAspectRatio: false, cutout: '60%',
           plugins: { legend: { position: 'bottom', labels: { color: '#CBD5E1', font: { family: 'Prompt' } } } } }
+      });
+    }
+
+    let categoryChart = null;
+    function renderCategoryChart(categories) {
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      if (categoryChart) categoryChart.destroy();
+      categoryChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: categories.map(function (c) { return c.name; }),
+          datasets: [{
+            label: 'จำนวนในระบบ (ชิ้น)',
+            data: categories.map(function (c) { return c.qty; }),
+            backgroundColor: '#3B82F6',
+            borderRadius: 8,
+            maxBarThickness: 90
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top', labels: { color: '#CBD5E1', font: { family: 'Prompt' } } }
+          },
+          scales: {
+            x: { ticks: { color: '#CBD5E1', font: { family: 'Prompt' } }, grid: { color: 'rgba(148,163,184,0.15)' } },
+            y: { beginAtZero: true, ticks: { color: '#94A3B8' }, grid: { color: 'rgba(148,163,184,0.15)' } }
+          }
+        }
       });
     }
   </script>
