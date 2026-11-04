@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TUMMOW STOCK CHECK</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Prompt', sans-serif; }
+    #reader video { border-radius: 0.75rem; }
+    /* เส้นเลเซอร์แดงแบบเครื่องยิงบาร์โค้ด */
+    .laser { position:absolute; left:8%; right:8%; top:50%; height:2px; background:#ef4444;
+             box-shadow:0 0 8px #ef4444; animation:scan 1.6s ease-in-out infinite; pointer-events:none; }
+    @keyframes scan { 0%,100% { transform:translateY(-50px); } 50% { transform:translateY(50px); } }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+
+  <nav class="bg-slate-800 border-b border-slate-700 sticky top-0 z-50">
+    <div class="max-w-xl mx-auto px-4 py-3 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <img src="https://i.postimg.cc/N5vrBxZ8/logo.png" alt="Logo" class="w-8 h-8 object-contain rounded-lg bg-slate-700 p-0.5">
+        <h1 class="text-lg font-bold text-emerald-400">TUMMOW STOCK CHECK</h1>
+      </div>
+      <div class="flex bg-slate-700 p-1 rounded-lg">
+        <button onclick="switchTab('audit')" id="btn-tab-audit" class="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white transition-all">ตรวจนับ</button>
+        <button onclick="switchTab('dashboard')" id="btn-tab-dashboard" class="px-3 py-1.5 rounded-md text-sm font-medium text-slate-300 transition-all">แดชบอร์ด</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-xl mx-auto p-4 pb-12 space-y-4">
+    <div id="tab-audit" class="space-y-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-4">
+      <h2 class="text-lg font-semibold text-emerald-300">🔍 บันทึกตรวจนับสินค้า</h2>
+
+      <!-- กล้องสแกนสด -->
+      <div id="camBox" class="space-y-2">
+        <div class="relative bg-black rounded-xl overflow-hidden border border-slate-700">
+          <div id="reader" class="w-full min-h-[200px]"></div>
+          <div id="laser" class="laser hidden"></div>
+        </div>
+        <div class="flex gap-2">
+          <button id="startBtn" type="button" onclick="startScanner()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-semibold">📷 เริ่มสแกน</button>
+          <button id="stopBtn" type="button" onclick="stopScanner()" class="hidden flex-1 bg-red-600 hover:bg-red-500 py-3 rounded-xl font-semibold">ปิดกล้อง</button>
+        </div>
+      </div>
+
+      <form id="auditForm" onsubmit="handleSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">รหัสสินค้า (SKU)</label>
+          <input type="text" id="sku" required placeholder="สแกนอัตโนมัติ หรือพิมพ์เอง" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">ยอดนับจริง (Actual Qty)</label>
+          <input type="number" inputmode="numeric" id="actualQty" required placeholder="ระบุจำนวนที่นับได้จริง" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">ถ่ายรูป / แนบรูปภาพหลักฐาน</label>
+          <input type="file" id="photoFile" accept="image/*" capture="environment" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-300 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-emerald-600 file:text-white">
+        </div>
+
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">หมายเหตุ / ความผิดปกติ (ถ้ามี)</label>
+          <input type="text" id="note" placeholder="เช่น ขวดแตก, รั่วซึม, หรือปกติ" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <label class="flex items-center gap-2 text-sm text-slate-300">
+          <input type="checkbox" id="autoNext" checked class="w-4 h-4 accent-emerald-500">
+          เปิดกล้องสแกนชิ้นถัดไปอัตโนมัติหลังบันทึก
+        </label>
+
+        <button type="submit" id="submitBtn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-600/30">
+          บันทึกและส่งแจ้งเตือน LINE
+        </button>
+      </form>
+    </div>
+
+    <div id="resultBox" class="hidden p-4 rounded-xl text-center font-medium"></div>
+    </div>
+
+    <!-- ===== แดชบอร์ด ===== -->
+    <div id="tab-dashboard" class="space-y-4 hidden">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-bold text-emerald-300">📊 สรุปภาพรวมสต๊อก</h2>
+        <button onclick="loadDashboardData()" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-xs">🔄 โหลดใหม่</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-slate-800 border border-slate-700 p-4 rounded-xl"><p class="text-xs text-slate-400">สินค้าทั้งหมด</p><p id="stat-total" class="text-2xl font-bold mt-1">0</p></div>
+        <div class="bg-slate-800 border border-slate-700 p-4 rounded-xl"><p class="text-xs text-slate-400">ตรวจแล้ว</p><p id="stat-audited" class="text-2xl font-bold text-emerald-400 mt-1">0</p></div>
+        <div class="bg-slate-800 border border-slate-700 p-4 rounded-xl"><p class="text-xs text-slate-400">สต๊อกขาดหาย 🚨</p><p id="stat-deficit" class="text-2xl font-bold text-red-400 mt-1">0</p></div>
+        <div class="bg-slate-800 border border-slate-700 p-4 rounded-xl"><p class="text-xs text-slate-400">สต๊อกเกิน ⚠️</p><p id="stat-surplus" class="text-2xl font-bold text-amber-400 mt-1">0</p></div>
+      </div>
+      <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl flex flex-col items-center">
+        <div class="w-full max-w-xs h-64"><canvas id="auditChart"></canvas></div>
+      </div>
+      <p id="dashMsg" class="text-center text-sm text-slate-400"></p>
+    </div>
+
+  </main>
+
+  <script>
+    // ====== ตั้งค่า: ใส่ URL ของ Web App (ลงท้ายด้วย /exec) ======
+    const SCRIPT_URL = "ใส่_WEB_APP_URL_ที่นี่";
+    // ===========================================================
+
+    
+    let html5QrCode = null;
+    let scanning = false;
+    let lastCode = "";
+
+    // เสียงปี๊บแบบเครื่องยิงบาร์โค้ด
+    function beep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "square";
+        osc.frequency.value = 1800;
+        gain.gain.value = 0.15;
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start();
+        setTimeout(() => { osc.stop(); ctx.close(); }, 120);
+      } catch (e) {}
+      if (navigator.vibrate) navigator.vibrate(100);
+    }
+
+    function setScanningUI(on) {
+      scanning = on;
+      document.getElementById('startBtn').classList.toggle('hidden', on);
+      document.getElementById('stopBtn').classList.toggle('hidden', !on);
+      document.getElementById('laser').classList.toggle('hidden', !on);
+    }
+
+    async function startScanner() {
+      if (scanning) return;
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("reader", {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.CODE_93, Html5QrcodeSupportedFormats.ITF,
+            Html5QrcodeSupportedFormats.CODABAR, Html5QrcodeSupportedFormats.QR_CODE
+          ],
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true }, // เร็วขึ้นบนมือถือที่รองรับ
+          verbose: false
+        });
+      }
+      try {
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 15,
+            qrbox: (w, h) => ({ width: Math.floor(w * 0.9), height: Math.floor(Math.min(h, w) * 0.45) }),
+            aspectRatio: 1.5,
+            videoConstraints: {
+              facingMode: "environment",
+              width: { ideal: 1280 }, height: { ideal: 720 },
+              advanced: [{ focusMode: "continuous" }]
+            }
+          },
+          onScanSuccess,
+          () => {}
+        );
+        setScanningUI(true);
+      } catch (err) {
+        setScanningUI(false);
+        alert("เปิดกล้องไม่ได้: " + err + "\nตรวจสอบว่าอนุญาตกล้องให้เว็บไซต์นี้แล้ว และเปิดผ่าน https");
+      }
+    }
+
+    async function stopScanner() {
+      if (html5QrCode && scanning) {
+        try { await html5QrCode.stop(); } catch (e) {}
+      }
+      setScanningUI(false);
+    }
+
+    async function onScanSuccess(text) {
+      if (!scanning || text === lastCode) return;
+      lastCode = text;
+      beep();
+      document.getElementById('sku').value = text;
+      await stopScanner();
+      // เหมือนเครื่องยิง: ได้รหัสแล้วเด้งไปช่องจำนวนทันที
+      const qty = document.getElementById('actualQty');
+      qty.focus();
+      qty.select();
+      setTimeout(() => { lastCode = ""; }, 1500);
+    }
+
+    // ย่อรูปก่อนส่ง เพื่อให้ส่งเร็วและไม่เกินขนาดที่ Apps Script รับได้
+    function compressImage(file, maxSize = 900, quality = 0.6) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
+    async function handleSubmit(e) {
+      e.preventDefault();
+      await stopScanner();
+
+      const btn = document.getElementById('submitBtn');
+      const resultBox = document.getElementById('resultBox');
+      btn.disabled = true;
+      btn.innerText = "กำลังบันทึกและส่ง LINE...";
+      resultBox.className = "hidden";
+
+      try {
+        const fileInput = document.getElementById('photoFile');
+        let photoUrl = "-";
+        if (fileInput.files && fileInput.files[0]) {
+          photoUrl = await compressImage(fileInput.files[0]);
+        }
+
+        const data = {
+          sku: document.getElementById('sku').value,
+          actualQty: document.getElementById('actualQty').value,
+          note: document.getElementById('note').value,
+          photoUrl: photoUrl
+        };
+
+        // text/plain + no-cors เพื่อหลีกเลี่ยงปัญหา CORS ของ Apps Script
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(data)
+        });
+
+        resultBox.className = "p-4 rounded-xl text-center font-medium bg-emerald-500/20 border border-emerald-500/50 text-emerald-300";
+        resultBox.innerText = "✅ ส่งข้อมูลแล้ว: " + data.sku;
+        document.getElementById('auditForm').reset();
+        document.getElementById('autoNext').checked = true;
+
+        if (document.getElementById('autoNext').checked) startScanner();
+      } catch (err) {
+        resultBox.className = "p-4 rounded-xl text-center font-medium bg-red-500/20 border border-red-500/50 text-red-300";
+        resultBox.innerText = "❌ เกิดข้อผิดพลาด: " + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "บันทึกและส่งแจ้งเตือน LINE";
+      }
+    }
+
+    function switchTab(tab) {
+      stopScanner();
+      const a = tab === 'audit';
+      document.getElementById('tab-audit').classList.toggle('hidden', !a);
+      document.getElementById('tab-dashboard').classList.toggle('hidden', a);
+      document.getElementById('btn-tab-audit').className = "px-3 py-1.5 rounded-md text-sm font-medium transition-all " + (a ? "bg-emerald-500 text-white" : "text-slate-300");
+      document.getElementById('btn-tab-dashboard').className = "px-3 py-1.5 rounded-md text-sm font-medium transition-all " + (!a ? "bg-emerald-500 text-white" : "text-slate-300");
+      if (!a) loadDashboardData();
+    }
+
+    let myChart = null;
+    async function loadDashboardData() {
+      const msg = document.getElementById('dashMsg');
+      msg.innerText = "กำลังโหลดข้อมูล...";
+      try {
+        const res = await fetch(SCRIPT_URL + "?action=dashboard");
+        const d = await res.json();
+        document.getElementById('stat-total').innerText = d.totalItems;
+        document.getElementById('stat-audited').innerText = d.auditedCount;
+        document.getElementById('stat-deficit').innerText = d.deficitCount;
+        document.getElementById('stat-surplus').innerText = d.surplusCount;
+        renderChart(d.auditedCount, d.pendingCount, d.deficitCount, d.surplusCount);
+        msg.innerText = "";
+      } catch (err) {
+        msg.innerText = "โหลดแดชบอร์ดไม่ได้ ตรวจสอบ SCRIPT_URL และ doGet ใน Code.gs";
+      }
+    }
+
+    function renderChart(audited, pending, deficit, surplus) {
+      const ctx = document.getElementById('auditChart').getContext('2d');
+      if (myChart) myChart.destroy();
+      myChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['ตรวจแล้ว', 'ยังไม่ตรวจ', 'สต๊อกขาด', 'สต๊อกเกิน'],
+          datasets: [{ data: [audited, pending, deficit, surplus], backgroundColor: ['#10B981', '#475569', '#EF4444', '#F59E0B'], borderWidth: 0 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { color: '#CBD5E1', font: { family: 'Prompt' } } } } }
+      });
+    }
+  </script>
+</body>
+</html>
