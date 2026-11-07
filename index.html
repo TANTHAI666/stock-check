@@ -58,6 +58,16 @@
           <p id="skuName" class="text-sm mt-1 min-h-[1.25rem]"></p>
         </div>
 
+        <!-- เลือกสินค้าเพื่อผูกบาร์โค้ดที่ไม่พบในชีต (ย้ายไปแสดงใต้ช่องรหัสที่กำลังใช้) -->
+        <div id="pickBox" class="hidden bg-slate-900 border border-amber-500/40 rounded-xl p-3 space-y-2">
+          <p class="text-sm text-amber-300 font-medium">เลือกสินค้าที่ตรงกับของที่สแกน</p>
+          <p class="text-xs text-slate-400">ระบบจะจำบาร์โค้ดนี้ไว้ ครั้งหน้าสแกนแล้วเจอสินค้าทันที</p>
+          <select id="pickCat" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm"></select>
+          <input type="text" id="pickQ" placeholder="ค้นหาชื่อ เช่น เป๊ปซี่ ขวดใหญ่" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-amber-500">
+          <div id="pickList" class="max-h-64 overflow-y-auto divide-y divide-slate-700"></div>
+          <button type="button" onclick="closePicker()" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg text-sm">ยกเลิก</button>
+        </div>
+
         <div>
           <label class="block text-sm text-slate-400 mb-1">ยอดนับจริง (Actual Qty)</label>
           <input type="number" inputmode="numeric" id="actualQty" required placeholder="ระบุจำนวนที่นับได้จริง" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500">
@@ -230,12 +240,9 @@
       beep();
       const tid = scanTarget === 'reduce' ? 'rCode' : 'sku';
       document.getElementById(tid).value = text;
-      lookupName(text, tid);
+      closePicker();
+      lookupName(text, tid, true); // ถ้าเจอจะเด้งไปช่องจำนวน ถ้าไม่เจอจะเปิดให้เลือกสินค้า
       await stopScanner();
-      // เหมือนเครื่องยิง: ได้รหัสแล้วเด้งไปช่องจำนวนทันที
-      const qty = document.getElementById(scanTarget === 'reduce' ? 'rQty' : 'actualQty');
-      qty.focus();
-      qty.select();
       setTimeout(() => { lastCode = ""; }, 1500);
     }
 
@@ -319,8 +326,9 @@
     }
 
     // แสดงชื่อสินค้าที่ตรงกับรหัส/บาร์โค้ด เพื่อยืนยันว่าสแกนถูกตัว
+    // auto = true (มาจากการสแกน): เจอ -> เด้งไปช่องจำนวน, ไม่เจอ -> เปิดให้เลือกสินค้าทันที
     const lookupTimers = {};
-    async function lookupName(code, inputId) {
+    async function lookupName(code, inputId, auto) {
       inputId = inputId || 'sku';
       const el = document.getElementById(inputId === 'sku' ? 'skuName' : 'rName');
       code = (code || "").trim();
@@ -334,22 +342,100 @@
         if (d.found) {
           el.className = "text-sm mt-1 text-emerald-400";
           el.innerText = "✅ " + d.name + " (" + d.sku + ")";
+          if (auto) {
+            const qty = document.getElementById(inputId === 'sku' ? 'actualQty' : 'rQty');
+            qty.focus(); qty.select();
+          }
         } else {
           el.className = "text-sm mt-1 text-amber-400";
-          el.innerText = "⚠️ ไม่พบรหัสนี้ในชีต";
+          el.innerHTML = "⚠️ ไม่พบรหัสนี้ในชีต " +
+            '<button type="button" onclick="openPicker(\'' + inputId + '\')" class="underline text-emerald-400">เลือกสินค้าเอง</button>';
+          if (auto) openPicker(inputId);
         }
       } catch (err) { el.innerText = ""; }
     }
     ['sku', 'rCode'].forEach(function (id) {
       document.getElementById(id).addEventListener('input', function (e) {
         clearTimeout(lookupTimers[id]);
-        lookupTimers[id] = setTimeout(function () { lookupName(e.target.value, id); }, 600);
+        lookupTimers[id] = setTimeout(function () { lookupName(e.target.value, id, false); }, 600);
       });
+    });
+
+    // ===== เลือกหมวดหมู่ + สินค้า เพื่อผูกบาร์โค้ดที่ไม่พบในชีต =====
+    let products = [];
+    let pickTarget = 'sku';
+    let pickCode = "";
+
+    async function openPicker(inputId) {
+      pickTarget = inputId;
+      pickCode = document.getElementById(inputId).value.trim();
+      if (!pickCode) return;
+      const box = document.getElementById('pickBox');
+      document.getElementById(inputId === 'sku' ? 'skuName' : 'rName').insertAdjacentElement('afterend', box);
+      box.classList.remove('hidden');
+      const list = document.getElementById('pickList');
+      if (!products.length) {
+        list.innerHTML = '<p class="text-sm text-slate-400 py-2">กำลังโหลดรายการสินค้า...</p>';
+        try {
+          const res = await fetch(SCRIPT_URL + "?action=products");
+          const d = await res.json();
+          products = d.items || [];
+        } catch (err) {
+          list.innerHTML = '<p class="text-sm text-red-400 py-2">โหลดรายการสินค้าไม่ได้ ตรวจสอบว่า Deploy Apps Script เวอร์ชันใหม่แล้ว</p>';
+          return;
+        }
+        const cats = Array.from(new Set(products.map(function (p) { return p.cat; }))).sort();
+        document.getElementById('pickCat').innerHTML = '<option value="">ทุกหมวดหมู่</option>' +
+          cats.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join("");
+      }
+      renderPick();
+    }
+
+    function closePicker() {
+      document.getElementById('pickBox').classList.add('hidden');
+    }
+
+    function renderPick() {
+      const cat = document.getElementById('pickCat').value;
+      const q = document.getElementById('pickQ').value.trim().toLowerCase();
+      const rows = products.filter(function (p) {
+        return (!cat || p.cat === cat) && (!q || (p.name + " " + p.sku).toLowerCase().indexOf(q) !== -1);
+      }).slice(0, 80);
+      document.getElementById('pickList').innerHTML = rows.length ? rows.map(function (p) {
+        return '<div class="py-2.5 px-1 cursor-pointer hover:bg-slate-800" data-sku="' + esc(p.sku) + '">' +
+          '<p class="text-sm font-medium">' + esc(p.name) + '</p>' +
+          '<p class="text-xs text-slate-400">' + esc(p.sku) + ' · ' + esc(p.cat) + '</p></div>';
+      }).join("") : '<p class="text-sm text-slate-400 py-2">ไม่พบสินค้า ลองเปลี่ยนหมวดหมู่หรือคำค้น</p>';
+    }
+    document.getElementById('pickCat').addEventListener('change', renderPick);
+    document.getElementById('pickQ').addEventListener('input', renderPick);
+
+    document.getElementById('pickList').addEventListener('click', async function (e) {
+      const el = e.target.closest('[data-sku]');
+      if (!el) return;
+      const p = products.find(function (x) { return x.sku === el.dataset.sku; });
+      if (!p) return;
+      if (!confirm("ผูกบาร์โค้ด " + pickCode + "\nกับ \"" + p.name + "\" ใช่หรือไม่?")) return;
+      const nameEl = document.getElementById(pickTarget === 'sku' ? 'skuName' : 'rName');
+      try {
+        const res = await fetch(SCRIPT_URL + "?action=linkBarcode&code=" + encodeURIComponent(pickCode) + "&sku=" + encodeURIComponent(p.sku));
+        const d = await res.json();
+        if (!d.ok) { alert("❌ " + (d.error || "ผูกบาร์โค้ดไม่สำเร็จ")); return; }
+        closePicker();
+        document.getElementById(pickTarget).value = p.sku;
+        nameEl.className = "text-sm mt-1 text-emerald-400";
+        nameEl.innerText = "✅ จำบาร์โค้ดนี้ไว้กับ " + p.name + " แล้ว (" + p.sku + ")";
+        const qty = document.getElementById(pickTarget === 'sku' ? 'actualQty' : 'rQty');
+        qty.focus(); qty.select();
+      } catch (err) {
+        alert("❌ ติดต่อเซิร์ฟเวอร์ไม่ได้");
+      }
     });
 
     const TABS = ['audit', 'reduce', 'history', 'dashboard'];
     function switchTab(tab) {
       stopScanner();
+      closePicker();
       scanTarget = tab === 'reduce' ? 'reduce' : 'audit';
       TABS.forEach(function (t) {
         document.getElementById('tab-' + t).classList.toggle('hidden', t !== tab);
